@@ -1,0 +1,6 @@
+#gitignore
+/CMakeLists.txt
+/cmake-build-debug/
+/main
+/k1k2
+/p1
