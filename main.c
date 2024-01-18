@@ -104,6 +104,12 @@ void handle_resume_signal(int signum) {
     }
 }
 
+void handle_for_M_hex_coding_signal() {
+    if(SIGPWR) {
+        kill(l, 30);
+    }
+}
+
 int main() {
     // Seed the random number generator with the current time
     srand(time(NULL));
@@ -113,8 +119,7 @@ int main() {
     signal(SIGQUIT, handle_signal_k1);
     signal(SIGILL, handle_stop_signal_k1);
     signal(SIGTRAP, handle_resume_signal);
-//    signal(SIGUSR1, handle_get_isStopped_from_other_process);
-//    signal(SIGUSR2, handle_get_isStopped_from_other_process);
+    signal(SIGPWR, handle_for_M_hex_coding_signal);
 
     //deklaracja tablicy 3 semaforow o wart poczatkowych 1, 0, 0
     semid = semget(45281, 3, IPC_CREAT | 0600);

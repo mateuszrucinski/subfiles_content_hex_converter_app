@@ -123,6 +123,13 @@ void handle_get_isRunning_from_other_process(int signum) {
     }
 }
 
+void handle_for_P1_hex_coding_signal() {
+    if(SIGPWR) {
+        kill(l, 30);
+    }
+}
+
+
 int main() {
     char character[2];
     isStopped = 0;
@@ -135,6 +142,7 @@ int main() {
     signal(SIGTRAP, handle_resume_signal);
     signal(SIGSEGV, handle_get_isStopped_from_other_process);
     signal(SIGPIPE, handle_get_isRunning_from_other_process);
+    signal(SIGPWR, handle_for_P1_hex_coding_signal);
 
     shmid = shmget(45281, sizeof(char), 0);
     if (shmid == -1) {

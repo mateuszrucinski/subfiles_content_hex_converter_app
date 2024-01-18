@@ -28,6 +28,7 @@ char* charBuffer;
 int* intBuffer;
 int isStoppedK1;
 int isStoppedK2;
+int isHexCoded;
 
 void podnies(int semid, int semnum, struct sembuf sembuf){
     sembuf.sem_num = semnum;
@@ -152,7 +153,28 @@ void handle_for_K2_get_isRunning_from_other_process(int signum) {
     }
 }
 
+void handle_hex_coding_signal() {
+    if(SIGPWR) {
+        if(isHexCoded == 1) {
+            printf("Kodowanie wylaczone\n");
+            isHexCoded = 0;
+        } else {
+            printf("Kodowanie wlaczone\n");
+            isHexCoded = 1;
+        }
+    }
+}
+
+void handle_for_K2_hex_coding_signal() {
+    if(SIGPWR) {
+        kill(l, 30);
+    }
+}
+
+
+
 int main() {
+    isHexCoded = 1;
     shmid = shmget(45281, sizeof(char), 0);
     if (shmid == -1)
     {
@@ -226,6 +248,7 @@ int main() {
         signal(SIGTRAP, handle_resume_signal_k2);
         signal(SIGSTKFLT, handle_for_K2_get_isStopped_from_other_process);
         signal(SIGCHLD, handle_for_K2_get_isRunning_from_other_process);
+        signal(SIGPWR, handle_for_K2_hex_coding_signal);
 
         printf("SIemanko\n");
         // zamkniecie deskryptora zapisu
@@ -273,6 +296,7 @@ int main() {
         signal(SIGTRAP, handle_resume_signal_k1);
         signal(SIGUSR1, handle_for_K1_get_isStopped_from_other_process);
         signal(SIGUSR2, handle_for_K1_get_isRunning_from_other_process);
+        signal(SIGPWR, handle_hex_coding_signal);
 
         //pobranie pidow
         opusc(intSemid, 1, intBuf);
@@ -319,7 +343,12 @@ int main() {
                 pause();
             }
 
-            printf("%s-:-%s\n", charBuffer, hexAbsolutePath);
+            if(isHexCoded) {
+                printf("%s-:-%s\n", charBuffer, hexAbsolutePath);
+            } else {
+                printf("%s-:-%s\n", charBuffer, charBuffer);
+                strcpy(hexAbsolutePath, charBuffer);
+            }
 
             sleep(5);
 
