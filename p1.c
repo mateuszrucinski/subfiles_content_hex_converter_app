@@ -3,7 +3,9 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
+
 #define MAX 10
+
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -15,20 +17,21 @@
 #include <signal.h>
 #include <wait.h>
 #include <errno.h>
+#include <dirent.h>
 
 static struct sembuf buf;
 static struct sembuf intBuf;
 
-pid_t k, l, m;
+pid_t k, l, m, n;
 int shmid, semid;
 int intShmid, intSemid;
-char* charBuffer;
-int* intBuffer;
+char *charBuffer;
+int *intBuffer;
 pid_t childPid, wpid;
 int status;
 int isStopped;
 
-void podnies(int semid, int semnum, struct sembuf sembuf){
+void podnies(int semid, int semnum, struct sembuf sembuf) {
     sembuf.sem_num = semnum;
     sembuf.sem_op = 1;
     sembuf.sem_flg = 0;
@@ -38,13 +41,13 @@ void podnies(int semid, int semnum, struct sembuf sembuf){
         result = semop(semid, &sembuf, 1);
     } while (result == -1 && errno == EINTR);
 
-    if (result == -1){
+    if (result == -1) {
         perror("Podnoszenie semafora");
         exit(1);
     }
 }
 
-void opusc(int semid, int semnum, struct sembuf sembuf){
+void opusc(int semid, int semnum, struct sembuf sembuf) {
     sembuf.sem_num = semnum;
     sembuf.sem_op = -1;
     sembuf.sem_flg = 0;
@@ -54,7 +57,7 @@ void opusc(int semid, int semnum, struct sembuf sembuf){
         result = semop(semid, &sembuf, 1);
     } while (result == -1 && errno == EINTR);
 
-    if (result == -1){
+    if (result == -1) {
         perror("Opuszczenie semafora");
         exit(1);
     }
@@ -73,12 +76,13 @@ void wyczysc() {
 }
 
 // Signal handler function
-void handle_signal(int signum) {
+void handle_signal_k1(int signum) {
     if (signum == SIGQUIT) {
         printf("Koniec programu elo, odebrano sygnal: %d\n", signum);
 
         kill(l, 1);
         kill(m, 1);
+        kill(n, 1);
         sleep(1);
         wyczysc();
         exit(0);
@@ -86,11 +90,12 @@ void handle_signal(int signum) {
 }
 
 //// Signal handler for SIGUSR1 (Stop app)
-void handle_stop_signal(int signum) {
+void handle_stop_signal_k1(int signum) {
     if (signum == SIGILL) {
         printf("Received SIGUSR1. Stopping the application.\n");
         isStopped = 1;
         kill(l, 10);
+        kill(n, 16);
     }
 }
 
@@ -100,6 +105,7 @@ void handle_resume_signal(int signum) {
         printf("Received SIGUSR2. Resuming the application.\n");
         isStopped = 0;
         kill(l, 12);
+        kill(n, 17);
     }
 }
 
@@ -124,90 +130,132 @@ int main() {
     // Seed the random number generator with the current time
     srand(time(NULL));
 
-    signal(SIGQUIT, handle_signal);
-    signal(SIGILL, handle_stop_signal);
+    signal(SIGQUIT, handle_signal_k1);
+    signal(SIGILL, handle_stop_signal_k1);
     signal(SIGTRAP, handle_resume_signal);
     signal(SIGSEGV, handle_get_isStopped_from_other_process);
     signal(SIGPIPE, handle_get_isRunning_from_other_process);
 
     shmid = shmget(45281, sizeof(char), 0);
-    if (shmid == -1)
-    {
+    if (shmid == -1) {
         perror("Uzyskanie dostepu do segmentu pamieci wspoldzielonej");
         exit(1);
     }
 
     intShmid = shmget(45282, sizeof(int), 0);
-    if (intShmid == -1)
-    {
+    if (intShmid == -1) {
         perror("Uzyskanie dostepu do segmentu pamieci wspoldzielonej");
         exit(1);
     }
 
     //wskaznik na pamiec char
-    charBuffer = (char*)&buf;
-    charBuffer= (char *) shmat(shmid, NULL, 0);
+    charBuffer = (char *) &buf;
+    charBuffer = (char *) shmat(shmid, NULL, 0);
     if (charBuffer == NULL) {
         perror("Przylaczenie segmentu pamieci wspoldzielonej");
         exit(1);
     }
 
     //wskaznik na pamiec int
-    intBuffer = (int*)&intBuf;
-    intBuffer = (int*)shmat(intShmid, NULL, 0);
+    intBuffer = (int *) &intBuf;
+    intBuffer = (int *) shmat(intShmid, NULL, 0);
     if (intBuffer == NULL) {
         perror("Przylaczenie segmentu pamieci wspoldzielonej (int)");
         exit(1);
     }
 
     semid = semget(45281, 3, 0);
-    if (semid == -1)
-    {
+    if (semid == -1) {
         perror("Otwarcie tablicy semaforow char");
         exit(1);
     }
 
     intSemid = semget(45282, 3, 0);
-    if (intSemid == -1)
-    {
+    if (intSemid == -1) {
         perror("Otwarcie tablicy semaforow int");
         exit(1);
     }
 
     //pobranie pidow
-    opusc(intSemid, 1, intBuf);
+    opusc(intSemid, 2, intBuf);
     m = intBuffer[0];
     k = intBuffer[1];
     l = intBuffer[2];
-    printf("W P1 dotarly pidy: M: %d, getPPid: %d, P1: %d, getPid: %d, K1K2: %d\n", m, getppid(), k, getpid(), l);
-    podnies(intSemid, 2, intBuf);
+    n = intBuffer[3];
+    printf("W P1 dotarly pidy: M: %d, getPPid: %d, P1: %d, getPid: %d, K1: %d, K2: %d\n", m, getppid(), k, getpid(), l, n);
 
-    while (1) {
+    sleep(3);
+    printf("Zabawa plikiem w P1\n");
+    struct dirent *de;  // Pointer for directory entry
+
+    // opendir() returns a pointer of DIR type.
+    //DIR* dr = opendir("/home/mati/CLionProjects/so-zad-semestralne/elo");
+
+    char argument[49];
+
+    strcpy(argument, "/home/mati/CLionProjects/so-zad-semestralne/elo/");
+
+    DIR *dr = opendir(argument);
+
+    if (dr == NULL) {
+        printf("Could not open current directory");
+        return 0;
+    }
+
+    printf("%s\n", argument);
+
+//    while ((de = readdir(dr)) != NULL) {
+//        printf("Entry: %s\n", de->d_name);
+//    }
+
+    // for readdir() funkcja ktora przechodzi przez kazdy zasob, ale rowniez przez rodzica i aktualny plik
+    while ((de = readdir(dr)) != NULL) {
+        printf("Jestem tutaj\n");
         //Czekanie na zapelnienie semafora o id 1
         opusc(semid, 1, buf);
+        printf("Opuscilem\n");
+        // ominiecie elementow "." i ".."
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
+            podnies(semid, 1, buf);
+            continue;
+        }
 
-        printf("Konsumer P1 o PID %d i PPID %d otrzymal: %c\n", getpid(), getppid(),  charBuffer[0]);
+        printf("Eloooo\n");
 
-        int randomInt = rand() % 26;
+        //pelna sciezka
+        size_t len1 = strlen(argument);
+        size_t len2 = strlen(de->d_name);
+        size_t totalLength = len1 + len2 + 1;
 
-        //setting value to char array
-        character[0] = 'A' + randomInt;
-        character[1] = '\0';
+        char absolutePath[totalLength];
+
+        // Copy the first string
+        strcpy(absolutePath, argument);
+
+        // Concatenate the second string
+        strcat(absolutePath, de->d_name);
+
+        printf("%s\n", absolutePath);
 
         //zapisanie do pamieci wspoldzielonej
-        strcpy(charBuffer, character);
+        strcpy(charBuffer, absolutePath);
 
+        printf("P1 o PID: %d wysyla sciezke do K1: %s\n", k, charBuffer);
 
-        printf("P1 nadaje nowa wartosc semafora, czyli: %c\n", charBuffer[0]);
-
-        // Sleep to simulate processing time
-        sleep(5);
-
-        while(isStopped) {
+        while (isStopped) {
             pause();
         }
 
+        // Sleep to simulate processing time
+        sleep(4);
+
+        printf("Podnosze 2\n");
         podnies(semid, 2, buf);
     }
 
+    printf("Jestem na koncu while\n");
+    sleep(5);
+    kill(l, 3);
+    kill(n, 3);
+    kill(m, 3);
 }

@@ -2,7 +2,9 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
+
 #define MAX 10
+
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -20,13 +22,14 @@ static struct sembuf buf;
 static struct sembuf intBuf;
 
 int isStopped;
-pid_t k, l;
+pid_t k, l, n;
 int shmid, semid;
 int intShmid, intSemid;
-char* charBuffer;
-int* intBuffer;
+char *charBuffer;
+int *intBuffer;
+int isRunning;
 
-void podnies(int semid, int semnum, struct sembuf sembuf){
+void podnies(int semid, int semnum, struct sembuf sembuf) {
     sembuf.sem_num = semnum;
     sembuf.sem_op = 1;
     sembuf.sem_flg = 0;
@@ -36,13 +39,13 @@ void podnies(int semid, int semnum, struct sembuf sembuf){
         result = semop(semid, &sembuf, 1);
     } while (result == -1 && errno == EINTR);
 
-    if (result == -1){
+    if (result == -1) {
         perror("Podnoszenie semafora");
         exit(1);
     }
 }
 
-void opusc(int semid, int semnum, struct sembuf sembuf){
+void opusc(int semid, int semnum, struct sembuf sembuf) {
     sembuf.sem_num = semnum;
     sembuf.sem_op = -1;
     sembuf.sem_flg = 0;
@@ -52,7 +55,7 @@ void opusc(int semid, int semnum, struct sembuf sembuf){
         result = semop(semid, &sembuf, 1);
     } while (result == -1 && errno == EINTR);
 
-    if (result == -1){
+    if (result == -1) {
         perror("Opuszczenie semafora");
         exit(1);
     }
@@ -62,6 +65,7 @@ void wyczysc() {
     //czyszczenie pamieci i zasobow
     kill(k, SIGINT);
     kill(l, SIGINT);
+    kill(n, SIGINT);
     wait(NULL);
     shmdt(charBuffer);
     shmctl(shmid, IPC_RMID, NULL);
@@ -72,19 +76,20 @@ void wyczysc() {
 }
 
 // Signal handler function
-void handle_signal(int signum) {
+void handle_signal_k1(int signum) {
     if (signum == SIGQUIT) {
         printf("Koniec programu, odebrano sygnal: %d\n", signum);
         kill(k, 1);
         kill(l, 1);
+        kill(n, 1);
         sleep(1);
-        wyczysc();
+        isRunning = 0;
         exit(0);
     }
 }
 
 //// Signal handler for SIGUSR1 (Stop app)
-void handle_stop_signal(int signum) {
+void handle_stop_signal_k1(int signum) {
     if (signum == SIGUSR1) {
         printf("Received SIGUSR1. Stopping the application.\n");
         isStopped = 1;
@@ -99,30 +104,17 @@ void handle_resume_signal(int signum) {
     }
 }
 
-//// Signal handler for SIGUSR1 (Stop app)
-void handle_get_isStopped_from_other_process(int signum) {
-    if (signum == SIGUSR1) {
-        isStopped = 1;
-    }
-}
-
-//// Signal handler for SIGUSR2 (Resume app)
-void handle_get_isRunning_from_other_process(int signum) {
-    if (signum == SIGUSR2) {
-        isStopped = 0;
-    }
-}
-
 int main() {
     // Seed the random number generator with the current time
     srand(time(NULL));
     isStopped = 0;
+    isRunning = 1;
 
-    signal(SIGQUIT, handle_signal);
-    signal(SIGILL, handle_stop_signal);
+    signal(SIGQUIT, handle_signal_k1);
+    signal(SIGILL, handle_stop_signal_k1);
     signal(SIGTRAP, handle_resume_signal);
-    signal(SIGUSR1, handle_get_isStopped_from_other_process);
-    signal(SIGUSR2, handle_get_isStopped_from_other_process);
+//    signal(SIGUSR1, handle_get_isStopped_from_other_process);
+//    signal(SIGUSR2, handle_get_isStopped_from_other_process);
 
     //deklaracja tablicy 3 semaforow o wart poczatkowych 1, 0, 0
     semid = semget(45281, 3, IPC_CREAT | 0600);
@@ -179,8 +171,8 @@ int main() {
     }
 
     //wskaznik na pamiec char
-    charBuffer = (char*)&buf;
-    charBuffer= (char *) shmat(shmid, NULL, 0);
+    charBuffer = (char *) &buf;
+    charBuffer = (char *) shmat(shmid, NULL, 0);
     if (charBuffer == NULL) {
         perror("Przylaczenie segmentu pamieci wspoldzielonej");
         exit(1);
@@ -194,8 +186,8 @@ int main() {
     }
 
     //wskaznik na pamiec int
-    intBuffer = (int*)&intBuf;
-    intBuffer = (int*)shmat(intShmid, NULL, 0);
+    intBuffer = (int *) &intBuf;
+    intBuffer = (int *) shmat(intShmid, NULL, 0);
     if (intBuffer == NULL) {
         perror("Przylaczenie segmentu pamieci wspoldzielonej (int)");
         exit(1);
@@ -203,74 +195,75 @@ int main() {
 
 
     //proces1 producent P1
-    if((k=fork())==0) {
+    if ((k = fork()) == 0) {
         sleep(1);
         //uruchomienie w procesie aplikacje P1
-        execl("./p1", "p1", (char *)NULL);
+        execl("./p1", "p1", (char *) NULL);
         wyczysc();
         exit(1);
     }
-    //proces2 konsument K1
+        //proces2 konsument K1
     else if ((l = fork()) == 0) {
         sleep(1);
         //uruchomienie w procesie aplikacje K1&K2
-        execl("./k1k2", "k1k2", (char *)NULL);
+        execl("./k1k2", "k1k2", (char *) NULL);
         wyczysc();
         exit(1);
     }
-    //proces3 do zatrzymanania apki i wznowienia
+        //proces3 do zatrzymanania apki i wznowienia
     else if (fork() == 0) {
-        if(isStopped) {
+        if (isStopped) {
             kill(getpid(), 19);
             kill(k, 19);
             kill(l, 19);
         }
 
     }
-    //proces matki
+        //proces matki
     else {
         //przekazanie pidy procesow przez semafory
         opusc(intSemid, 0, intBuf);
-        int tab[3];
+        int tab[4];
         tab[0] = getpid();
         tab[1] = k;
         tab[2] = l;
+        tab[3] = 0;
 
         memcpy(intBuffer, tab, sizeof(tab));
 
-        printf("Wyslano do procesow pidy procesow: M: %d, P1: %d, K1K2: %d\n", intBuffer[0], intBuffer[1], intBuffer[2]);
+        printf("Wyslano do procesow pidy procesow: M: %d, P1: %d, K1: %d, K2: %d\n", intBuffer[0], intBuffer[1],
+               intBuffer[2], intBuffer[3]);
 
         podnies(intSemid, 1, intBuf);
 
-        sleep(3);
+        sleep(5);
+
+        printf("Wyslano do procesow pidy procesow: M: %d, P1: %d, K1: %d, K2: %d\n", intBuffer[0], intBuffer[1],
+               intBuffer[2], intBuffer[3]);
+
+        n = intBuffer[3];
+
+        sleep(1);
 
         printf("M PID: %d \n", getpid());
 
-        char character[2];
+
+        opusc(semid, 0, buf);
 
         printf("Rozpoczecie wysylania danych\n");
 
-        for(int i = 0; i < 5; i++) {
-            opusc(semid, 0, buf);
+        printf("Zaczynamy zabawe o M: %d\n", getpid());
 
-            int randomInt = rand() % 26;
+        sleep(1);
 
-            //setting value to char array
-            character[0] = 'A' + randomInt;
-            character[1] = '\0';
+        while (isStopped) {
+            pause();
+        }
 
-            //zapisanie do pamieci wspoldzielonej
-            strcpy(charBuffer, character);
+        podnies(semid, 1, buf);
 
-            printf("Z M PID: %d, wysylam do P1 litere: %c\n", getpid(), character[0]);
+        while(isRunning) {
 
-            sleep(5);
-
-            while(isStopped) {
-                pause();
-            }
-
-            podnies(semid, 1, buf);
         }
 
         //czyszczenie danych

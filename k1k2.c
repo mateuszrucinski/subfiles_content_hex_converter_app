@@ -21,12 +21,13 @@
 static struct sembuf buf;
 static struct sembuf intBuf;
 
-pid_t k, l, m;
+pid_t k, l, m, n;
 int shmid, semid;
 int intShmid, intSemid;
 char* charBuffer;
 int* intBuffer;
-int isStopped;
+int isStoppedK1;
+int isStoppedK2;
 
 void podnies(int semid, int semnum, struct sembuf sembuf){
     sembuf.sem_num = semnum;
@@ -73,10 +74,11 @@ void wyczysc() {
 }
 
 // Signal handler function
-void handle_signal(int signum) {
+void handle_signal_k1(int signum) {
     if (signum == SIGQUIT) {
         printf("Koniec programu elo, odebrano sygnal: %d\n", signum);
         kill(k, 1);
+        kill(n, 1);
         kill(m, SIGINT);
         sleep(1);
         wyczysc();
@@ -85,49 +87,72 @@ void handle_signal(int signum) {
 }
 
 //// Signal handler for SIGUSR1 (Stop app)
-void handle_stop_signal(int signum) {
+void handle_stop_signal_k1(int signum) {
     if (signum == SIGILL) {
         printf("Received SIGUSR1. Stopping the application.\n");
-        isStopped = 1;
+        isStoppedK1 = 1;
         kill(k, 11);
-    }
-}
-
-// Signal handler for SIGUSR2 (Resume app)
-void handle_resume_signal(int signum) {
-    if (signum == SIGTRAP) {
-        printf("Received SIGUSR2. Resuming the application.\n");
-        isStopped = 0;
-        kill(k, 13);
+        kill(n, 16);
     }
 }
 
 //// Signal handler for SIGUSR1 (Stop app)
-void handle_get_isStopped_from_other_process(int signum) {
+void handle_stop_signal_k2(int signum) {
+    if (signum == SIGILL) {
+        printf("Elo byku Stopping the application.\n");
+        isStoppedK2 = 1;
+        kill(k, 11);
+        kill(l, 10);
+    }
+}
+
+void handle_resume_signal_k1(int signum) {
+    if (signum == SIGTRAP) {
+        printf("Received SIGUSR2. Resuming the application.\n");
+        isStoppedK1 = 0;
+        kill(k, 13);
+        kill(n, 17);
+    }
+}
+
+void handle_resume_signal_k2(int signum) {
+    if (signum == SIGTRAP) {
+        printf("Jamnio. Resuming the application.\n");
+        isStoppedK2 = 0;
+        kill(k, 13);
+        kill(l, 12);
+    }
+}
+
+//// Signal handler for SIGUSR1 (Stop app)
+void handle_for_K1_get_isStopped_from_other_process(int signum) {
     if (signum == SIGUSR1) {
-        isStopped = 1;
+        isStoppedK1 = 1;
     }
 }
 
 //// Signal handler for SIGUSR2 (Resume app)
-void handle_get_isRunning_from_other_process(int signum) {
+void handle_for_K1_get_isRunning_from_other_process(int signum) {
     if (signum == SIGUSR2) {
-        isStopped = 0;
+        isStoppedK1 = 0;
+    }
+}
+
+//// Signal handler for SIGUSR1 (Stop app)
+void handle_for_K2_get_isStopped_from_other_process(int signum) {
+    if (signum == SIGSTKFLT) {
+        isStoppedK2 = 1;
+    }
+}
+
+//// Signal handler for SIGUSR2 (Resume app)
+void handle_for_K2_get_isRunning_from_other_process(int signum) {
+    if (signum == SIGCHLD) {
+        isStoppedK2 = 0;
     }
 }
 
 int main() {
-    // Seed the random number generator with the current time
-    srand(time(NULL));
-
-    isStopped = 0;
-
-    signal(SIGQUIT, handle_signal);
-    signal(SIGILL, handle_stop_signal);
-    signal(SIGTRAP, handle_resume_signal);
-    signal(SIGUSR1, handle_get_isStopped_from_other_process);
-    signal(SIGUSR2, handle_get_isRunning_from_other_process);
-
     shmid = shmget(45281, sizeof(char), 0);
     if (shmid == -1)
     {
@@ -172,25 +197,144 @@ int main() {
         exit(1);
     }
 
-    //pobranie pidow
-    opusc(intSemid, 2, intBuf);
-    m = intBuffer[0];
-    k = intBuffer[1];
-    l = intBuffer[2];
-    printf("W K1K2 dotarly pidy: M: %d, getPPid: %d, P1: %d, getPid: %d, K1K2: %d\n", m, getppid(), k, getpid(), l);
+    // dane do komunikacji K2
+    // dane do pipe
+    int pdes1[2];
 
-    while (1) {
-        opusc(semid, 2, buf);
-        printf("K1 przyjal wartosc: %c\n", charBuffer[0]);
-
-        // Sleep to simulate processing time
-        sleep(5);
-
-        while(isStopped) {
-            pause();
-        }
-
-        podnies(semid, 0, buf);
+    pipe(pdes1);
+    if (pipe(pdes1) == -1) {
+        perror("Błąd przy tworzeniu potoku 1");
+        return 1;
     }
 
+    // dane do komunikacji K2
+    // dane do pipe
+    int pdes2[2];
+
+    pipe(pdes2);
+    if (pipe(pdes2) == -1) {
+        perror("Błąd przy tworzeniu potoku 1");
+        return 1;
+    }
+
+    //process k2
+    if ((n = fork()) == 0) {
+        isStoppedK2 = 0;
+
+        signal(SIGQUIT, handle_signal_k1);
+        signal(SIGILL, handle_stop_signal_k2);
+        signal(SIGTRAP, handle_resume_signal_k2);
+        signal(SIGSTKFLT, handle_for_K2_get_isStopped_from_other_process);
+        signal(SIGCHLD, handle_for_K2_get_isRunning_from_other_process);
+
+        printf("SIemanko\n");
+        // zamkniecie deskryptora zapisu
+        close(pdes2[1]);
+        int pidId[4];
+        while(k == 0 || l == 0 || m == 0) {
+            read(pdes2[0], pidId, sizeof(pidId));
+            m = pidId[0];
+            k = pidId[1];
+            l = getppid();
+            printf("W $$$ k2 k, l, m: %d, %d, %d\n", k, l , m);
+        }
+        close(pdes2[0]);
+
+        while(1) {
+
+            printf("W k2 k, l, m: %d, %d, %d\n", k, l , m);
+
+            char hexAbsolutePath[256]; // Assuming a maximum size
+            ssize_t bytesRead = read(pdes1[0], hexAbsolutePath, sizeof(hexAbsolutePath));
+
+            // Null-terminate the received string
+            hexAbsolutePath[bytesRead] = '\0';
+
+            // Print the received hexadecimal representation
+            printf("K2 received: %s\n", hexAbsolutePath);
+
+            // zamkniecie deskryptora odczytu
+            close(pdes1[0]);
+
+            // Sleep to simulate processing time
+            sleep(4);
+
+            while(isStoppedK2) {
+                pause();
+            }
+        }
+    }
+    //proces k1
+    else {
+        printf("Here i am pid: %d\n", getpid());
+        isStoppedK1 = 0;
+        signal(SIGQUIT, handle_signal_k1);
+        signal(SIGILL, handle_stop_signal_k1);
+        signal(SIGTRAP, handle_resume_signal_k1);
+        signal(SIGUSR1, handle_for_K1_get_isStopped_from_other_process);
+        signal(SIGUSR2, handle_for_K1_get_isRunning_from_other_process);
+
+        //pobranie pidow
+        opusc(intSemid, 1, intBuf);
+        m = intBuffer[0];
+        k = intBuffer[1];
+        l = intBuffer[2];
+
+        sleep(2);
+
+        //saving n pid value to intBuffer
+        intBuffer[3] = n;
+
+        printf("W K1 dotarly pidy: M: %d, getPPid: %d, P1: %d, getPid: %d, K1: %d, K2: %d\n", m, getppid(), k, getpid(), l, n);
+
+        // zamkniecie deskryptora odczytu
+        close(pdes2[0]);
+        write(pdes2[1], intBuffer, sizeof(intBuffer));
+        // zamkniecie deskryptora zapisu
+        close(pdes2[1]);
+
+        podnies(intSemid, 2, intBuf);
+
+        while (1) {
+            opusc(semid, 2, buf);
+
+            // Find the length of the string
+            size_t bufferLength = strlen(charBuffer);
+
+            // Allocate memory for the hexadecimal representation
+            // (twice the length of the original string + 1 for the null terminator)
+            size_t hexBufferLength = 2 * bufferLength + 1;
+            char hexAbsolutePath[hexBufferLength];
+
+            // Iterate through each character, convert to hexadecimal, and store in hexAbsolutePath
+            for (size_t i = 0; i < bufferLength; i++) {
+                //char w hex zajmuje 2 miejsca (ASCI) zatem przechodze co drugi adres w hexAbsolutePath aby zapelnic wartosci
+                sprintf(hexAbsolutePath + 2 * i, "%02x", charBuffer[i]);
+            }
+
+            // Null-terminate the hexadecimal string
+            hexAbsolutePath[2 * bufferLength] = '\0';
+
+            while(isStoppedK1) {
+                pause();
+            }
+
+            printf("%s-:-%s\n", charBuffer, hexAbsolutePath);
+
+            sleep(5);
+
+            while(isStoppedK1) {
+                pause();
+            }
+
+            // zamkniecie deskryptora odczytu
+            close(pdes1[0]);
+            write(pdes1[1], hexAbsolutePath, hexBufferLength);
+
+            // zamkniecie deskryptora zapisu
+            close(pdes1[1]);
+
+            podnies(semid, 1, buf);
+        }
+    }
 }
