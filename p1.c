@@ -78,14 +78,7 @@ void wyczysc() {
 // Signal handler function
 void handle_signal_k1(int signum) {
     if (signum == SIGQUIT) {
-        printf("Koniec programu elo, odebrano sygnal: %d\n", signum);
-
-        kill(l, 1);
-        kill(m, 1);
-        kill(n, 1);
-        sleep(1);
-        wyczysc();
-        exit(0);
+        kill(m, 3);
     }
 }
 
@@ -201,7 +194,12 @@ int main() {
 
     char argument[49];
 
-    strcpy(argument, "/home/mati/CLionProjects/so-zad-semestralne/elo/");
+    char sciezka[50];
+
+    printf("Podaj sciezke byku:\n");
+    scanf(" %s", sciezka);
+
+    strcpy(argument, sciezka);
 
     DIR *dr = opendir(argument);
 
@@ -212,23 +210,16 @@ int main() {
 
     printf("%s\n", argument);
 
-//    while ((de = readdir(dr)) != NULL) {
-//        printf("Entry: %s\n", de->d_name);
-//    }
 
     // for readdir() funkcja ktora przechodzi przez kazdy zasob, ale rowniez przez rodzica i aktualny plik
     while ((de = readdir(dr)) != NULL) {
-        printf("Jestem tutaj\n");
         //Czekanie na zapelnienie semafora o id 1
         opusc(semid, 1, buf);
-        printf("Opuscilem\n");
         // ominiecie elementow "." i ".."
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
             podnies(semid, 1, buf);
             continue;
         }
-
-        printf("Eloooo\n");
 
         //pelna sciezka
         size_t len1 = strlen(argument);
@@ -257,11 +248,9 @@ int main() {
         // Sleep to simulate processing time
         sleep(4);
 
-        printf("Podnosze 2\n");
         podnies(semid, 2, buf);
     }
 
-    printf("Jestem na koncu while\n");
     sleep(5);
     kill(l, 3);
     kill(n, 3);

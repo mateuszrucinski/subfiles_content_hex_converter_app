@@ -77,13 +77,7 @@ void wyczysc() {
 // Signal handler function
 void handle_signal_k1(int signum) {
     if (signum == SIGQUIT) {
-        printf("Koniec programu elo, odebrano sygnal: %d\n", signum);
-        kill(k, 1);
-        kill(n, 1);
-        kill(m, SIGINT);
-        sleep(1);
-        wyczysc();
-        exit(0);
+        kill(m, 3);
     }
 }
 
@@ -250,7 +244,6 @@ int main() {
         signal(SIGCHLD, handle_for_K2_get_isRunning_from_other_process);
         signal(SIGPWR, handle_for_K2_hex_coding_signal);
 
-        printf("SIemanko\n");
         // zamkniecie deskryptora zapisu
         close(pdes2[1]);
         int pidId[4];
@@ -259,33 +252,31 @@ int main() {
             m = pidId[0];
             k = pidId[1];
             l = getppid();
-            printf("W $$$ k2 k, l, m: %d, %d, %d\n", k, l , m);
         }
         close(pdes2[0]);
 
         while(1) {
-
-            printf("W k2 k, l, m: %d, %d, %d\n", k, l , m);
-
             char hexAbsolutePath[256]; // Assuming a maximum size
+            // Close the unused ends of the pipes
+            close(pdes1[1]);
             ssize_t bytesRead = read(pdes1[0], hexAbsolutePath, sizeof(hexAbsolutePath));
+            // zamkniecie deskryptora odczytu
 
             // Null-terminate the received string
             hexAbsolutePath[bytesRead] = '\0';
-
             // Print the received hexadecimal representation
             printf("K2 received: %s\n", hexAbsolutePath);
 
-            // zamkniecie deskryptora odczytu
-            close(pdes1[0]);
-
             // Sleep to simulate processing time
             sleep(4);
+
+//            close(pdes1[0]);
 
             while(isStoppedK2) {
                 pause();
             }
         }
+
     }
     //proces k1
     else {
@@ -360,8 +351,8 @@ int main() {
             close(pdes1[0]);
             write(pdes1[1], hexAbsolutePath, hexBufferLength);
 
-            // zamkniecie deskryptora zapisu
-            close(pdes1[1]);
+//            // zamkniecie deskryptora zapisu
+//            close(pdes1[1]);
 
             podnies(semid, 1, buf);
         }
